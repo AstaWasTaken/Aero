@@ -1,0 +1,28 @@
+# Build artifacts
+/build/
+/build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.venv/
+
+# Project outputs
+/results/
+*.log
+
+# IDE/editor
+.vscode/
+.idea/
+*.swp
+
+# Project Outline
+CFD_Solver_Project_Outline.pdf

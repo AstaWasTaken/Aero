@@ -1,0 +1,34 @@
+[build-system]
+requires = [
+  "setuptools>=65",
+]
+build-backend = "setuptools.build_meta:__legacy__"
+
+[project]
+name = "cfd"
+version = "0.1.0"
+description = "AeroCFD Python user layer for the C++/CUDA solver scaffold"
+requires-python = ">=3.10"
+dependencies = [
+  "PyYAML>=6.0",
+  "numpy>=1.24",
+  "matplotlib>=3.7",
+]
+
+[project.optional-dependencies]
+cli = [
+  "typer>=0.9",
+  "rich>=13.0",
+]
+ui = [
+  "streamlit>=1.30",
+  "pandas>=2.0",
+]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+cfd = "cfd.cli:main"
+
+[tool.setuptools]
+packages = ["cfd"]
+py-modules = ["cfd_core"]

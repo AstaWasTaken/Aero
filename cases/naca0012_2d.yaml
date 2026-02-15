@@ -1,0 +1,20 @@
+name: naca0012_2d_demo
+geometry:
+  type: airfoil2d
+  profile: NACA0012
+  chord: 1.0
+mesh:
+  generator: structured_c
+  cells: 24000
+flow:
+  mach: 0.15
+  reynolds: 6000000.0
+  aoa_deg: 2.0
+solver:
+  equations: rans
+  turbulence_model: sst
+  iterations: 50
+  cfl: 1.5
+output:
+  format: vtu
+  write_interval: 50

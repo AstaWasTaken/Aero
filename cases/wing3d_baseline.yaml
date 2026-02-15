@@ -1,0 +1,21 @@
+name: wing3d_baseline
+geometry:
+  type: wing3d
+  profile: NACA0012
+  chord: 1.0
+  span: 8.0
+mesh:
+  generator: unstructured
+  cells: 1200000
+flow:
+  mach: 0.22
+  reynolds: 8500000.0
+  aoa_deg: 3.0
+solver:
+  equations: rans
+  turbulence_model: sst
+  iterations: 120
+  cfl: 2.0
+output:
+  format: vtu
+  write_interval: 100
