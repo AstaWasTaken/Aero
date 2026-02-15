@@ -19,7 +19,9 @@ struct UnstructuredMesh {
   // Face data: normals are unit normals pointing out of owner.
   std::vector<int> face_owner;
   std::vector<int> face_neighbor;
+  std::vector<int> face_vertices;  // v0,v1 per face
   std::vector<float> face_normal;  // xyz per face
+  std::vector<float> face_center;  // xyz per face
   std::vector<float> face_area;
   std::vector<float> cell_volume;
   std::vector<float> cell_center;  // xyz per cell

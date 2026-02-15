@@ -191,17 +191,26 @@ UnstructuredMesh make_demo_tri_mesh_2x2() {
   mesh.num_faces = static_cast<int>(face_order.size());
   mesh.face_owner.resize(mesh.num_faces);
   mesh.face_neighbor.resize(mesh.num_faces);
+  mesh.face_vertices.resize(static_cast<std::size_t>(mesh.num_faces) * 2);
   mesh.face_area.resize(mesh.num_faces);
   mesh.face_normal.resize(static_cast<std::size_t>(mesh.num_faces) * 3);
+  mesh.face_center.resize(static_cast<std::size_t>(mesh.num_faces) * 3);
 
   for (int new_face = 0; new_face < mesh.num_faces; ++new_face) {
     const auto& old_face = faces[face_order[new_face]];
     mesh.face_owner[new_face] = old_face.owner;
     mesh.face_neighbor[new_face] = old_face.neighbor;
+    mesh.face_vertices[2 * new_face + 0] = old_face.v0;
+    mesh.face_vertices[2 * new_face + 1] = old_face.v1;
     mesh.face_area[new_face] = old_face.area;
     mesh.face_normal[3 * new_face + 0] = old_face.nx;
     mesh.face_normal[3 * new_face + 1] = old_face.ny;
     mesh.face_normal[3 * new_face + 2] = old_face.nz;
+    const auto& p0 = points[old_face.v0];
+    const auto& p1 = points[old_face.v1];
+    mesh.face_center[3 * new_face + 0] = 0.5f * (p0[0] + p1[0]);
+    mesh.face_center[3 * new_face + 1] = 0.5f * (p0[1] + p1[1]);
+    mesh.face_center[3 * new_face + 2] = 0.0f;
   }
 
   int patch_start = static_cast<int>(interior_faces.size());

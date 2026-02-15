@@ -1,0 +1,32 @@
+name: naca0012_euler_2d
+case_type: euler_airfoil_2d
+geometry:
+  type: airfoil2d
+  profile: NACA0012
+  chord: 1.0
+mesh:
+  generator: structured_o
+  circumferential: 160
+  radial: 42
+  farfield_radius: 15.0
+  radial_stretch: 1.45
+flow:
+  mach: 0.15
+  aoa_deg: 2.0
+  p_inf: 101325.0
+  t_inf: 288.15
+solver:
+  equations: euler
+  iterations: 220
+  min_iterations: 35
+numerics:
+  gamma: 1.4
+  gas_constant: 287.05
+  cfl_start: 0.2
+  cfl_max: 1.1
+  cfl_ramp_iters: 120
+  residual_reduction_target: 1.0e-3
+  force_stability_tol: 2.0e-5
+post:
+  x_ref: 0.25
+  y_ref: 0.0

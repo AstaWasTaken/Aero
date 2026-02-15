@@ -47,6 +47,24 @@ def _write_placeholder_vtu(path: Path) -> None:
     )
 
 
+def _detect_case_type(case_path: str) -> str:
+    path = Path(case_path)
+    if not path.exists():
+        return "scalar_advect_demo"
+
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return "scalar_advect_demo"
+
+    for line in content.splitlines():
+        if line.strip().startswith("case_type="):
+            return line.split("=", maxsplit=1)[1].strip() or "scalar_advect_demo"
+        if line.strip().startswith("case_type:"):
+            return line.split(":", maxsplit=1)[1].strip() or "scalar_advect_demo"
+    return "scalar_advect_demo"
+
+
 def run_case(case_path: str, out_dir: str, backend: str = "cpu") -> dict:
     backend_lower = backend.strip().lower()
     if backend_lower not in {"cpu", "cuda"}:
@@ -58,6 +76,7 @@ def run_case(case_path: str, out_dir: str, backend: str = "cpu") -> dict:
 
     root = Path(out_dir)
     root.mkdir(parents=True, exist_ok=True)
+    case_type = _detect_case_type(case_path)
 
     (root / "run.log").write_text(
         "\n".join(
@@ -66,6 +85,7 @@ def run_case(case_path: str, out_dir: str, backend: str = "cpu") -> dict:
                 f"version={version()}",
                 f"case_path={case_path}",
                 f"backend={backend_lower}",
+                f"case_type={case_type}",
                 "status=completed_stub",
                 "TODO(physics): Implement RANS/SST governing equations and source terms.",
                 "TODO(numerics): Replace dummy residuals with actual flux/residual assembly.",
@@ -111,6 +131,13 @@ def run_case(case_path: str, out_dir: str, backend: str = "cpu") -> dict:
     return {
         "status": "ok",
         "backend": backend_lower,
+        "case_type": case_type,
         "run_log": str(root / "run.log"),
         "iterations": 5,
+        "residual_l1": 0.0,
+        "residual_l2": 0.0625,
+        "residual_linf": 0.0,
+        "cl": 0.35,
+        "cd": 0.0178,
+        "cm": -0.003,
     }

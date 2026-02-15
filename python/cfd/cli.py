@@ -8,8 +8,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cfd import __version__, cuda_available, run_case_native
-from cfd.case import load_case, prepare_output_dir, resolve_case, write_resolved_case
+from cfd import __version__, core_module_path, cuda_available, native_core_loaded, run_case_native
+from cfd.case import (
+  load_case,
+  prepare_output_dir,
+  resolve_case,
+  write_native_case_config,
+  write_resolved_case,
+)
 from cfd.post import generate_plots
 from cfd.sweep import run_sweep
 
@@ -49,13 +55,26 @@ def _run_command(args: argparse.Namespace) -> int:
   try:
     user_case = load_case(args.case_yaml)
     resolved_case = resolve_case(user_case, backend=backend)
+    case_type = str(resolved_case.get("case_type", "scalar_advect_demo"))
+    if case_type == "euler_airfoil_2d" and not native_core_loaded:
+      print("Euler airfoil runs require native cfd_core extension, but Python fallback is loaded.")
+      print(f"Loaded module: {core_module_path}")
+      return 3
+
     write_resolved_case(resolved_case, output_dir)
-    summary = run_case_native(str(args.case_yaml), str(output_dir), backend)
+    native_case = write_native_case_config(resolved_case, output_dir)
+    summary = run_case_native(str(native_case), str(output_dir), backend)
   except Exception as exc:  # pragma: no cover - CLI error path
     print(f"Run failed: {exc}")
     return 1
 
   print(f"Run completed. Outputs: {output_dir}")
+  if resolved_case.get("case_type") == "euler_airfoil_2d":
+    print(
+      f"Final coefficients: Cl={summary.get('cl', float('nan')):.6f}, "
+      f"Cd={summary.get('cd', float('nan')):.6f}, "
+      f"Cm={summary.get('cm', float('nan')):.6f}"
+    )
   print(summary)
   return 0
 

@@ -1,4 +1,5 @@
 name: scalar_advect_demo
+case_type: scalar_advect_demo
 mesh:
   generator: demo_tri_2x2
 solver:

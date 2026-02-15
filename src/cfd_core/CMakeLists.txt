@@ -1,7 +1,12 @@
 set(CFD_CORE_SOURCES
+  mesh/airfoil_mesh.cpp
   mesh/mesh.cpp
+  numerics/euler_flux.cpp
+  numerics/reconstruction.cpp
   numerics/residual_stub.cpp
   io/io_vtk_stub.cpp
+  post/forces.cpp
+  solvers/euler_solver.cpp
 )
 
 add_library(cfd_core_lib ${CFD_CORE_LIBRARY_TYPE} ${CFD_CORE_SOURCES})

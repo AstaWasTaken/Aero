@@ -78,4 +78,76 @@ bool write_scalar_cell_vtu(const std::filesystem::path& output_path, const Unstr
 
   return true;
 }
+
+bool write_euler_cell_vtu(const std::filesystem::path& output_path, const UnstructuredMesh& mesh,
+                          const std::vector<float>& rho, const std::vector<float>& u,
+                          const std::vector<float>& v, const std::vector<float>& p,
+                          const std::vector<float>& mach,
+                          const std::vector<float>& residual_magnitude) {
+  if (mesh.num_cells <= 0 || mesh.num_faces <= 0) {
+    return false;
+  }
+  const std::size_t n = static_cast<std::size_t>(mesh.num_cells);
+  if (rho.size() != n || u.size() != n || v.size() != n || p.size() != n || mach.size() != n ||
+      residual_magnitude.size() != n) {
+    return false;
+  }
+  if (mesh.points.size() % 3 != 0) {
+    return false;
+  }
+
+  std::ofstream out(output_path, std::ios::trunc);
+  if (!out) {
+    return false;
+  }
+
+  const int num_points = static_cast<int>(mesh.points.size() / 3);
+
+  out << "<?xml version=\"1.0\"?>\n";
+  out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
+  out << "  <UnstructuredGrid>\n";
+  out << "    <Piece NumberOfPoints=\"" << num_points << "\" NumberOfCells=\"" << mesh.num_cells
+      << "\">\n";
+  out << "      <Points>\n";
+  out << "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">";
+  write_ascii_data_array(out, mesh.points);
+  out << "</DataArray>\n";
+  out << "      </Points>\n";
+  out << "      <Cells>\n";
+  out << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">";
+  write_ascii_data_array(out, mesh.cell_connectivity);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"ascii\">";
+  write_ascii_data_array(out, mesh.cell_offsets);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">";
+  write_ascii_data_array(out, mesh.cell_types);
+  out << "</DataArray>\n";
+  out << "      </Cells>\n";
+  out << "      <PointData/>\n";
+  out << "      <CellData Scalars=\"rho\">\n";
+  out << "        <DataArray type=\"Float32\" Name=\"rho\" format=\"ascii\">";
+  write_ascii_data_array(out, rho);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"Float32\" Name=\"u\" format=\"ascii\">";
+  write_ascii_data_array(out, u);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"Float32\" Name=\"v\" format=\"ascii\">";
+  write_ascii_data_array(out, v);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"Float32\" Name=\"p\" format=\"ascii\">";
+  write_ascii_data_array(out, p);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"Float32\" Name=\"Mach\" format=\"ascii\">";
+  write_ascii_data_array(out, mach);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"Float32\" Name=\"residual_magnitude\" format=\"ascii\">";
+  write_ascii_data_array(out, residual_magnitude);
+  out << "</DataArray>\n";
+  out << "      </CellData>\n";
+  out << "    </Piece>\n";
+  out << "  </UnstructuredGrid>\n";
+  out << "</VTKFile>\n";
+  return true;
+}
 }  // namespace cfd::core
