@@ -1,0 +1,10 @@
+name: scalar_advect_demo
+mesh:
+  generator: demo_tri_2x2
+solver:
+  equations: scalar_advection
+  iterations: 1
+flow:
+  u_inf: [1.0, 0.35, 0.0]
+scalar:
+  inflow_phi: 1.0

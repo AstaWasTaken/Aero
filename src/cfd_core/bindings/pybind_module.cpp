@@ -25,8 +25,11 @@ PYBIND11_MODULE(cfd_core, m) {
       result["backend"] = summary.backend;
       result["run_log"] = summary.run_log;
       result["iterations"] = summary.iterations;
+      result["residual_l1"] = summary.residual_l1;
+      result["residual_l2"] = summary.residual_l2;
+      result["residual_linf"] = summary.residual_linf;
       return result;
     },
     py::arg("case_path"), py::arg("out_dir"), py::arg("backend") = "cpu",
-    "Run a case stub and generate deterministic placeholder outputs.");
+    "Run the scalar advection demo case and generate VTU/CSV outputs.");
 }

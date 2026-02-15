@@ -26,6 +26,11 @@ target_compile_definitions(cfd_core_lib
     $<$<NOT:$<BOOL:${CFD_CUDA_AVAILABLE}>>:CFD_HAS_CUDA=0>
 )
 
+find_package(OpenMP QUIET)
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(cfd_core_lib PUBLIC OpenMP::OpenMP_CXX)
+endif()
+
 if(CFD_CUDA_AVAILABLE)
   add_subdirectory(cuda)
   target_link_libraries(cfd_core_lib PUBLIC cfd_cuda_backend)

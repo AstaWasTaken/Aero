@@ -1,30 +1,77 @@
 #include "cfd_core/io_vtk.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 
 namespace cfd::core {
-bool write_placeholder_vtu(const std::filesystem::path& output_path) {
+namespace {
+template <typename T>
+void write_ascii_data_array(std::ofstream& out, const std::vector<T>& values) {
+  for (std::size_t i = 0; i < values.size(); ++i) {
+    if (i > 0) {
+      out << ' ';
+    }
+    out << values[i];
+  }
+}
+}  // namespace
+
+bool write_scalar_cell_vtu(const std::filesystem::path& output_path, const UnstructuredMesh& mesh,
+                           const std::vector<float>& phi, const std::vector<float>& residual) {
+  if (mesh.num_cells <= 0 || mesh.num_faces <= 0) {
+    return false;
+  }
+  if (phi.size() != static_cast<std::size_t>(mesh.num_cells) ||
+      residual.size() != static_cast<std::size_t>(mesh.num_cells)) {
+    return false;
+  }
+  if (mesh.points.size() % 3 != 0) {
+    return false;
+  }
+
   std::ofstream out(output_path, std::ios::trunc);
   if (!out) {
     return false;
   }
 
+  std::vector<float> residual_mag(residual.size(), 0.0f);
+  for (std::size_t i = 0; i < residual.size(); ++i) {
+    residual_mag[i] = std::abs(residual[i]);
+  }
+
+  const int num_points = static_cast<int>(mesh.points.size() / 3);
+
   out << "<?xml version=\"1.0\"?>\n";
   out << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">\n";
   out << "  <UnstructuredGrid>\n";
-  out << "    <Piece NumberOfPoints=\"1\" NumberOfCells=\"1\">\n";
+  out << "    <Piece NumberOfPoints=\"" << num_points << "\" NumberOfCells=\"" << mesh.num_cells
+      << "\">\n";
   out << "      <Points>\n";
-  out << "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">0 0 0</DataArray>\n";
+  out << "        <DataArray type=\"Float32\" NumberOfComponents=\"3\" format=\"ascii\">";
+  write_ascii_data_array(out, mesh.points);
+  out << "</DataArray>\n";
   out << "      </Points>\n";
   out << "      <Cells>\n";
-  out << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">0</DataArray>\n";
-  out << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"ascii\">1</DataArray>\n";
-  out << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">1</DataArray>\n";
+  out << "        <DataArray type=\"Int32\" Name=\"connectivity\" format=\"ascii\">";
+  write_ascii_data_array(out, mesh.cell_connectivity);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"Int32\" Name=\"offsets\" format=\"ascii\">";
+  write_ascii_data_array(out, mesh.cell_offsets);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"UInt8\" Name=\"types\" format=\"ascii\">";
+  write_ascii_data_array(out, mesh.cell_types);
+  out << "</DataArray>\n";
   out << "      </Cells>\n";
-  out << "      <PointData>\n";
-  out << "        <DataArray type=\"Float32\" Name=\"pressure\" format=\"ascii\">101325</DataArray>\n";
-  out << "      </PointData>\n";
-  out << "      <CellData/>\n";
+  out << "      <PointData/>\n";
+  out << "      <CellData Scalars=\"phi\">\n";
+  out << "        <DataArray type=\"Float32\" Name=\"phi\" format=\"ascii\">";
+  write_ascii_data_array(out, phi);
+  out << "</DataArray>\n";
+  out << "        <DataArray type=\"Float32\" Name=\"residual_magnitude\" format=\"ascii\">";
+  write_ascii_data_array(out, residual_mag);
+  out << "</DataArray>\n";
+  out << "      </CellData>\n";
   out << "    </Piece>\n";
   out << "  </UnstructuredGrid>\n";
   out << "</VTKFile>\n";
