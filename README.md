@@ -1,59 +1,92 @@
 # AeroCFD Project
 
-AeroCFD is my CFD solver project for analysing 2D airfoils and 3D finite wings, with a focus on producing accurate aerodynamic results (e.g., Cp distributions and force coefficients) while keeping execution fast using GPU acceleration (CUDA).
+AeroCFD is my student CFD solver project for analyzing 2D airfoils (and eventually 3D wings), with a focus on useful aerodynamic outputs (Cp, Cl, Cd, Cm) and GPU acceleration with CUDA.
 
-Right now, the repository is set up as a working foundation: the build system, C++/CUDA core layout, Python bindings, CLI workflow, and output pipeline are in place. The current implementation only includes a simple deterministic “hello-world” compute path so that the architecture is verified end-to-end before I begin adding the full CFD physics and numerical methods.
+The codebase is no longer just a placeholder wiring demo. It now has working scalar and Euler paths, CPU and CUDA backend selection, test coverage for parity/regression, and deterministic VTU/CSV outputs.
 
-## Planned Features
+## Current Implementation Status
 
-**Core solver**
-- 2D airfoil + 3D wing support (shared finite-volume core)
-- Unstructured mesh support (cells/faces + boundary patches)
-- Compressible **Euler → Navier–Stokes → RANS**
-- Turbulence models: **Spalart–Allmaras (SA)** and **k–ω SST**
-- Optional bonus: **transition model** + **URANS (dual-time stepping)**
+### Implemented now
 
-**Numerics**
-- Second-order reconstruction (MUSCL + limiter)
-- Gradient reconstruction (least-squares / Green–Gauss)
-- Robust boundary conditions (farfield, wall, symmetry, periodic)
-- Convergence monitoring (residuals + force convergence)
-
-**Performance**
-- **CUDA-first GPU acceleration** for flux/residual/gradient/turbulence kernels
-- CPU/OpenMP fallback for compatibility + validation
-- Profiling + optimisation (minimise host↔device transfers)
-
-**Outputs & usability**
-- Cp distribution + force/moment coefficients (Cl, Cd, Cm)
-- VTU/VTK export for **ParaView** visualisation
-- CLI workflow: `cfd run`, `cfd sweep`, `cfd post`
-- Optional Streamlit UI for quick case setup + plots
-
-## Features Repository
-
-- C++20 core library (`cfd_core`) with CPU and optional CUDA backend toggle.
-- pybind11 extension module (`cfd_core`) exposed to Python.
-- Python package (`cfd`) with CLI subcommands: `run`, `sweep`, `post`, `ui`.
-- YAML case loading + schema validation + resolved snapshot writing.
-- Dummy run output generation:
-  - `resolved_case.yaml`
-  - `run.log`
+- C++20 native core (`cfd_core`) with optional CUDA backend.
+- Deterministic unstructured mesh generation for:
+  - demo scalar mesh
+  - 2D airfoil O-grid-like triangular mesh
+- Scalar advection residual assembly:
+  - CPU path
+  - CUDA face kernel path
+- 2D compressible Euler airfoil solver:
+  - Rusanov flux
+  - MUSCL + minmod limiter
+  - slip wall and farfield boundary conditions
+  - force and wall Cp post-processing
+- Euler residual CUDA acceleration (M2.5 scope):
+  - face reconstruction + flux + residual accumulation on GPU
+  - pseudo-time iteration loop remains CPU-driven for now
+- Output pipeline:
+  - `field_0000.vtu`
   - `residuals.csv`
   - `forces.csv`
-  - `field_0000.vtu`
-- Smoke tests for C++ and Python.
+  - `cp_wall.csv` (Euler case)
+  - `run.log`
+- Python package + CLI:
+  - `cfd run`
+  - `cfd sweep`
+  - `cfd post`
+  - `cfd ui`
+- Tests:
+  - C++ smoke test
+  - scalar CPU/CUDA parity test
+  - Euler regression test
+  - Euler CPU/CUDA residual parity test
+  - Python import/CLI smoke tests
 
-## Repository layout
+### Planned next
 
-- `src/cfd_core`: native core and CUDA/backend stubs
+- Extend from Euler to viscous Navier-Stokes and RANS models.
+- Move more of the Euler loop to GPU (state/residual residency, gradients, implicit/JFNK paths).
+- Expand 3D wing workflow and validation cases.
+
+## Repository Layout
+
+- `src/cfd_core`: native core, numerics, mesh, IO, post, solver
+- `src/cfd_core/cuda`: CUDA kernels and backend code
 - `src/cfd_core/bindings`: pybind11 module
 - `python/cfd`: Python API and CLI
-- `cases`: sample YAML inputs
-- `tests`: C++ and Python smoke tests
-- `docs`: project scope, architecture, validation plan
+- `cases`: sample YAML case files
+- `tests`: C++ and Python tests
+- `scripts`: helper build/run scripts
+- `docs`: project outline, developer guide, validation plan
 
-## Build the C++ project (CPU-only)
+## Build
+
+### Linux/macOS quick scripts
+
+CPU:
+
+```bash
+bash scripts/build_cpu.sh
+```
+
+CUDA:
+
+```bash
+bash scripts/build_cuda.sh
+```
+
+### Windows quick script
+
+From repo root:
+
+```bat
+scripts\build_cuda.cmd
+```
+
+This script sets up the VS dev environment (if needed), configures CUDA build, builds, and runs CTest.
+
+### Manual CMake build
+
+CPU-only:
 
 ```bash
 cmake -S . -B build/cpu -DCFD_ENABLE_CUDA=OFF -DCFD_BUILD_PYTHON=ON -DCFD_BUILD_TESTS=ON
@@ -61,7 +94,7 @@ cmake --build build/cpu --config Release
 ctest --test-dir build/cpu --output-on-failure
 ```
 
-## Build the C++ project (CUDA enabled)
+CUDA-enabled:
 
 ```bash
 cmake -S . -B build/cuda -DCFD_ENABLE_CUDA=ON -DCFD_BUILD_PYTHON=ON -DCFD_BUILD_TESTS=ON
@@ -69,11 +102,11 @@ cmake --build build/cuda --config Release
 ctest --test-dir build/cuda --output-on-failure
 ```
 
-If CUDA is requested but no CUDA compiler is available, CMake prints a warning and falls back to CPU mode.
+If CUDA is requested but not detected, CMake prints a warning and continues with CPU-only backend.
 
-## Install Python package (editable)
+## Install Python Package (Editable)
 
-Run from repository root:
+From repository root:
 
 ```bash
 python -m pip install -e python
@@ -83,38 +116,58 @@ Sanity check:
 
 ```bash
 python -c "import cfd; print(cfd.__version__)"
-cfd --help
+python -m cfd.cli --help
 ```
 
-## Run the demo case
+## Run Cases
+
+Scalar demo:
 
 ```bash
-cfd run cases/naca0012_2d.yaml --backend cpu --out results/demo
+python -m cfd.cli run cases/scalar_advect_demo.yaml --backend cpu --out results/scalar_demo
 ```
 
-Generated outputs in `results/demo` are deterministic placeholders for integration validation.
+Euler airfoil (CPU residual):
 
-## Open VTU output in ParaView
+```bash
+python -m cfd.cli run cases/naca0012_euler_2d.yaml --backend cpu --out results/euler_cpu_demo
+```
+
+Euler airfoil (CUDA residual):
+
+```bash
+python -m cfd.cli run cases/naca0012_euler_2d.yaml --backend cuda --out results/euler_cuda_demo
+```
+
+Typical Euler outputs in the run folder:
+
+- `field_0000.vtu`
+- `cp_wall.csv`
+- `forces.csv`
+- `residuals.csv`
+- `run.log`
+
+## Open VTU in ParaView
 
 1. Start ParaView.
-2. Open `results/demo/field_0000.vtu`.
+2. Open `results/<run_name>/field_0000.vtu`.
 3. Click **Apply**.
 
-The VTU currently contains a minimal placeholder unstructured grid.
+## Tests
 
-## Run tests
-
-Python smoke test:
+Python:
 
 ```bash
 pytest -q tests/python
 ```
 
-C++ smoke test (via CTest):
+C++ via CTest:
 
 ```bash
 ctest --test-dir build/cpu --output-on-failure
 ```
+
+CUDA builds include CPU/CUDA parity tests. If CUDA runtime is unavailable, parity tests skip gracefully.
 
 ## Formatting
 
@@ -125,9 +178,7 @@ bash scripts/format_all.sh
 - C++: `clang-format`
 - Python: `ruff` + `black`
 
-## Roadmap
-
-See:
+## Roadmap and Docs
 
 - `docs/project_outline.md`
 - `docs/developer_guide.md`

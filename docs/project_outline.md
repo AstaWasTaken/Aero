@@ -2,49 +2,63 @@
 
 ## Mission
 
-Develop a production-grade CFD solver focused on aerodynamic analysis of airfoils and wings with a CUDA-first
-acceleration strategy and a robust CPU fallback.
+Build a reliable CFD solver for aerodynamic analysis of airfoils (and later wings), with a CUDA-first acceleration path and a CPU fallback for validation and portability.
 
-## Scope by stage
+## Current Progress Snapshot
 
-### Stage 0 (this scaffold)
+### M1 complete
 
-- C++20 core build + CUDA option + Python bindings.
-- YAML-driven cases and deterministic output plumbing.
-- CLI and optional Streamlit entry point.
+- Deterministic unstructured mesh generation (demo path).
+- Scalar advection residual assembly on CPU and CUDA.
+- CUDA face-kernel pattern with atomic accumulation.
+- VTU output and CLI wiring.
 
-### Stage 1 (Euler / baseline RANS scaffold)
+### M2 complete
 
-- 2D finite-volume core for structured and unstructured meshes.
-- Inviscid flux implementation and residual assembly framework.
-- Boundary condition framework (farfield, wall, symmetry).
+- 2D compressible Euler airfoil solver on CPU.
+- Rusanov flux + MUSCL/minmod reconstruction.
+- Slip-wall and farfield boundary conditions.
+- Cp/Cl/Cd/Cm post-processing.
+- Euler regression test coverage.
 
-### Stage 2 (RANS + turbulence)
+### M2.5 complete
 
-- Compressible RANS with SST baseline.
-- Transitional modeling hooks and infrastructure.
-- Steady-state convergence controls and monitoring.
+- CUDA acceleration for Euler residual assembly hot path:
+  - face reconstruction
+  - Rusanov face flux
+  - per-cell residual accumulation
+- CPU-driven pseudo-time loop retained for now.
+- CPU/CUDA Euler residual parity test added.
 
-### Stage 3 (3D and finite wings)
+## Next Stages
 
-- Extruded 3D consistency checks from 2D sections.
-- Full finite-wing meshing and solver support.
-- Aerodynamic coefficients, induced effects, and trend validation.
+### Near term
 
-### Stage 4 (URANS and advanced capabilities)
+- Keep state/residual resident on GPU across iterations.
+- Move gradient construction to GPU.
+- Strengthen solver robustness and convergence controls.
 
-- Time-accurate URANS stepping.
-- CUDA kernels for residuals, gradients, and linear solves.
-- Multi-case sweep throughput optimization.
+### Mid term
 
-## Backend strategy
+- Extend from Euler to viscous Navier-Stokes / RANS.
+- Add turbulence-model infrastructure (SA / SST).
+- Expand case coverage and validation datasets.
 
-- Default backend: CPU (always available).
-- Optional backend: CUDA (`CFD_ENABLE_CUDA=ON`).
-- Shared interfaces for future HIP/SYCL exploration.
+### Long term
 
-## Output and tooling
+- 3D finite-wing workflows.
+- Unsteady pathway (URANS / dual-time stepping).
+- Throughput optimization for sweeps and larger runs.
 
-- Native output target: VTU/VTK for ParaView.
-- Python post-processing for convergence and force history plots.
-- Repeatable case snapshot capture for traceability.
+## Backend Strategy
+
+- Default backend: CPU.
+- Optional backend: CUDA (`CFD_ENABLE_CUDA=ON` and runtime GPU availability).
+- Shared interfaces between CPU and CUDA code paths where possible.
+
+## Outputs and Tooling
+
+- VTU output for ParaView.
+- CSV outputs for residual and force history.
+- Case snapshot + run log for reproducibility.
+- Python CLI for `run`, `sweep`, `post`, and optional UI.

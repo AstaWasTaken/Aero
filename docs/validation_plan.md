@@ -1,39 +1,53 @@
 # Validation Plan
 
-## Goals
+## Objective
 
-Create staged confidence in solver behavior from simple 2D checks to 3D finite-wing trends.
+Build confidence step-by-step, starting from deterministic parity checks and moving toward physically meaningful aerodynamic trend validation.
 
-## Stage A: 2D airfoil baselines
+## Implemented Validation (Current)
 
-- NACA0012 low-Mach attached-flow trends.
-- Angle-of-attack sweep for monotonic lift slope behavior.
-- Convergence monitoring for residual decay stability.
+### Automated native tests
 
-## Stage B: 2D robustness checks
+- `cfd_core_smoke`: build/import surface sanity.
+- `cfd_scalar_parity`: scalar residual CPU/CUDA parity.
+- `cfd_euler_regression`: Euler run remains bounded and produces expected outputs.
+- `cfd_euler_parity`: Euler residual CPU/CUDA parity for the same mesh/state.
 
-- Sensitivity to mesh refinement and CFL settings.
-- Mild shock-containing transonic cases for robustness checks.
-- Boundary-condition consistency tests.
+### Automated Python checks
 
-## Stage C: 3D consistency
+- Import checks for `cfd` and `cfd_core`.
+- CLI smoke run for scalar case output generation.
 
-- Extruded 2D geometry in 3D grid to validate dimensional consistency.
-- Compare sectional loads against 2D references.
+## Near-Term Validation Expansion
 
-## Stage D: finite-wing trend checks
+### 2D Euler quality checks
 
-- Rectangular wing baseline: induced drag and lift slope trends.
-- Tapered wing trend comparisons across moderate AR values.
-- Grid convergence trends for integrated force coefficients.
+- Residual trend behavior over mesh refinement levels.
+- Force coefficient sensitivity to CFL and iteration controls.
+- Wall Cp shape consistency at low Mach attached flow.
 
-## Stage E: unsteady pathway
+### Boundary-condition robustness
 
-- URANS oscillator sanity case.
-- Time-step sensitivity and phase-consistency checks.
+- Farfield radius sensitivity.
+- Slip-wall consistency checks across angle of attack.
 
-## Reporting outputs
+## Mid-Term Validation (After Viscous/RANS Work)
 
-- Residual history plots.
-- Force coefficient histories (`CL`, `CD`, `CM`).
-- Snapshot artifacts (`resolved_case.yaml`, `run.log`, `*.vtu`).
+- RANS baseline comparisons for NACA0012-style cases.
+- Turbulence-model parameter sensitivity sweeps.
+- Grid-convergence trend checks for integrated coefficients.
+
+## Longer-Term Validation (3D/Unsteady)
+
+- 3D extruded consistency checks against 2D sections.
+- Finite-wing trend validation (lift slope and induced drag behavior).
+- Unsteady sanity cases for time-step sensitivity and phase consistency.
+
+## Reporting Artifacts
+
+- `residuals.csv`
+- `forces.csv`
+- `cp_wall.csv` (Euler airfoil runs)
+- `field_0000.vtu`
+- `resolved_case.yaml`
+- `run.log`
