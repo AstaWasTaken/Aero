@@ -12,7 +12,7 @@ mesh:
   radial_stretch: 1.45
 flow:
   mach: 0.15
-  aoa_deg: 2.0
+  aoa_deg: 0.0
   p_inf: 101325.0
   t_inf: 288.15
 solver:
@@ -22,11 +22,27 @@ solver:
 numerics:
   gamma: 1.4
   gas_constant: 287.05
+  flux: hllc
+  limiter: venkat
+  precond: on
+  precond_mach_ref: 0.15
+  precond_mach_min: 1.0e-3
+  precond_beta_min: 0.2
+  precond_beta_max: 1.0
+  local_time_stepping: on
+  rk_stages: 3
+  startup_first_order_iters: 25
+  low_mach_fix: on
+  mach_cutoff: 0.3
+  all_speed_flux_fix: off
+  all_speed_mach_cutoff: 0.25
   cfl_start: 0.2
   cfl_max: 1.1
   cfl_ramp_iters: 120
   residual_reduction_target: 1.0e-3
   force_stability_tol: 2.0e-5
+  force_stability_window: 6
+  force_mean_drift_tol: 2.0e-5
 post:
   x_ref: 0.25
   y_ref: 0.0

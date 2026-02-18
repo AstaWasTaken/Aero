@@ -1,53 +1,63 @@
 # Validation Plan
 
-## Objective
+## Goal
 
-Build confidence step-by-step, starting from deterministic parity checks and moving toward physically meaningful aerodynamic trend validation.
+Keep confidence high while iterating on numerics, especially low-Mach behavior.
 
-## Implemented Validation (Current)
+## Current automated checks
 
-### Automated native tests
+Native C++ tests:
 
-- `cfd_core_smoke`: build/import surface sanity.
-- `cfd_scalar_parity`: scalar residual CPU/CUDA parity.
-- `cfd_euler_regression`: Euler run remains bounded and produces expected outputs.
-- `cfd_euler_parity`: Euler residual CPU/CUDA parity for the same mesh/state.
+- `cfd_core_smoke`
+- `cfd_scalar_parity`
+- `cfd_euler_regression`
+- `cfd_euler_aoa0_regression`
+- `cfd_euler_aoa0_coeff`
+- `cfd_euler_wall_sanity`
+- `cfd_euler_uniform_invariance`
+- `cfd_euler_parity`
+- `cfd_euler_low_mach_asymptotic`
 
-### Automated Python checks
+Python checks:
 
-- Import checks for `cfd` and `cfd_core`.
-- CLI smoke run for scalar case output generation.
+- import checks for `cfd` and `cfd_core`
+- CLI smoke output generation
 
-## Near-Term Validation Expansion
+## Minimum regression gate
 
-### 2D Euler quality checks
+Run this before merging solver changes:
 
-- Residual trend behavior over mesh refinement levels.
-- Force coefficient sensitivity to CFL and iteration controls.
-- Wall Cp shape consistency at low Mach attached flow.
+```bash
+ctest --test-dir build/cpu -R "cfd_euler_regression|cfd_euler_uniform_invariance|cfd_euler_wall_sanity|cfd_euler_low_mach_asymptotic" --output-on-failure
+```
 
-### Boundary-condition robustness
+Also run:
 
-- Farfield radius sensitivity.
-- Slip-wall consistency checks across angle of attack.
+```bash
+pytest -q tests/python
+```
 
-## Mid-Term Validation (After Viscous/RANS Work)
+## Baseline data
 
-- RANS baseline comparisons for NACA0012-style cases.
-- Turbulence-model parameter sensitivity sweeps.
-- Grid-convergence trend checks for integrated coefficients.
+Canonical low-Mach mechanism baseline files:
 
-## Longer-Term Validation (3D/Unsteady)
+- `tests/data/baselines/low_mach_euler/resolved_case.yaml`
+- `tests/data/baselines/low_mach_euler/expected.yaml`
 
-- 3D extruded consistency checks against 2D sections.
-- Finite-wing trend validation (lift slope and induced drag behavior).
-- Unsteady sanity cases for time-step sensitivity and phase consistency.
+These keep the low-Mach mechanism test reproducible without storing huge run folders.
 
-## Reporting Artifacts
+## Key run artifacts to inspect
 
 - `residuals.csv`
 - `forces.csv`
-- `cp_wall.csv` (Euler airfoil runs)
+- `euler_diagnostics.csv`
+- `cp_wall.csv`
 - `field_0000.vtu`
-- `resolved_case.yaml`
 - `run.log`
+
+## Next validation expansion
+
+- mesh sensitivity for Euler coefficients
+- farfield-radius sensitivity checks
+- stronger low-Mach trend tracking over more Mach points
+- future RANS/3D validation once those paths are implemented

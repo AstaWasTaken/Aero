@@ -11,6 +11,7 @@
 namespace cfd::core {
 namespace {
 constexpr float kPi = 3.14159265358979323846f;
+constexpr bool kFaceNormalIsUnit = true;
 
 struct EdgeKey {
   int a = -1;
@@ -129,21 +130,48 @@ std::vector<int> order_wall_faces(const UnstructuredMesh& mesh, const std::vecto
 
   return ordered_faces;
 }
+
+std::array<float, 3> face_nA(const UnstructuredMesh& mesh, const int face) {
+  const std::array<float, 3> body_outward_normal = {
+    -mesh.face_normal[3 * face + 0],
+    -mesh.face_normal[3 * face + 1],
+    -mesh.face_normal[3 * face + 2],
+  };
+  if (kFaceNormalIsUnit) {
+    const float area = mesh.face_area[face];
+    return {
+      body_outward_normal[0] * area,
+      body_outward_normal[1] * area,
+      body_outward_normal[2] * area,
+    };
+  }
+  return body_outward_normal;
+}
 }  // namespace
 
 std::vector<int> find_patch_faces(const UnstructuredMesh& mesh, const std::string& patch_name) {
+  int total_faces = 0;
   for (const auto& patch : mesh.boundary_patches) {
     if (patch.name != patch_name) {
       continue;
     }
-    std::vector<int> faces;
-    faces.reserve(static_cast<std::size_t>(patch.face_count));
+    total_faces += patch.face_count;
+  }
+  if (total_faces <= 0) {
+    return {};
+  }
+
+  std::vector<int> faces;
+  faces.reserve(static_cast<std::size_t>(total_faces));
+  for (const auto& patch : mesh.boundary_patches) {
+    if (patch.name != patch_name) {
+      continue;
+    }
     for (int i = 0; i < patch.face_count; ++i) {
       faces.push_back(patch.start_face + i);
     }
-    return faces;
   }
-  return {};
+  return faces;
 }
 
 std::vector<WallCpSample> extract_wall_cp(const UnstructuredMesh& mesh,
@@ -177,33 +205,79 @@ std::vector<WallCpSample> extract_wall_cp(const UnstructuredMesh& mesh,
   return samples;
 }
 
-ForceCoefficients integrate_pressure_forces(const UnstructuredMesh& mesh,
-                                            const std::vector<float>& cell_pressure,
-                                            const FreestreamReference& reference,
-                                            const std::string& wall_patch) {
+PressureForceDiagnostics compute_pressure_force_diagnostics(
+  const UnstructuredMesh& mesh, const std::vector<float>& cell_pressure,
+  const FreestreamReference& reference, const std::string& wall_patch) {
   if (cell_pressure.size() != static_cast<std::size_t>(mesh.num_cells)) {
     throw std::invalid_argument("Pressure vector size must match mesh.num_cells.");
   }
 
   const std::vector<int> wall_faces = find_patch_faces(mesh, wall_patch);
+  PressureForceDiagnostics diagnostics;
+  diagnostics.integrated_face_count = static_cast<int>(wall_faces.size());
+  diagnostics.normal_is_unit = kFaceNormalIsUnit;
+
+  for (const int face : wall_faces) {
+    if (face < 0 || face >= mesh.num_faces) {
+      throw std::runtime_error("Wall face index is out of mesh face bounds.");
+    }
+    if (mesh.face_neighbor[face] >= 0) {
+      throw std::runtime_error("Wall face set contains an interior face.");
+    }
+
+    const int owner = mesh.face_owner[face];
+    if (owner < 0 || owner >= mesh.num_cells) {
+      throw std::runtime_error("Wall face owner is out of mesh cell bounds.");
+    }
+
+    const std::array<float, 3> nA = face_nA(mesh, face);
+    const float p = cell_pressure[owner];
+    const float gauge_p = p - reference.p_inf;
+
+    diagnostics.sum_nA_x += nA[0];
+    diagnostics.sum_nA_y += nA[1];
+    diagnostics.sum_nA_z += nA[2];
+    diagnostics.fx_abs -= p * nA[0];
+    diagnostics.fy_abs -= p * nA[1];
+    diagnostics.fz_abs -= p * nA[2];
+    diagnostics.fx_gauge -= gauge_p * nA[0];
+    diagnostics.fy_gauge -= gauge_p * nA[1];
+    diagnostics.fz_gauge -= gauge_p * nA[2];
+  }
+
+  return diagnostics;
+}
+
+ForceCoefficients integrate_pressure_forces(const UnstructuredMesh& mesh,
+                                            const std::vector<float>& cell_pressure,
+                                            const FreestreamReference& reference,
+                                            const std::string& wall_patch,
+                                            const bool subtract_p_inf) {
+  if (cell_pressure.size() != static_cast<std::size_t>(mesh.num_cells)) {
+    throw std::invalid_argument("Pressure vector size must match mesh.num_cells.");
+  }
+
+  const std::vector<int> wall_faces = find_patch_faces(mesh, wall_patch);
+  const PressureForceDiagnostics diagnostics =
+    compute_pressure_force_diagnostics(mesh, cell_pressure, reference, wall_patch);
   const float q_inf =
     0.5f * reference.rho_inf * reference.speed_inf * reference.speed_inf + 1.0e-12f;
   const float alpha = reference.aoa_deg * (kPi / 180.0f);
   const float cos_a = std::cos(alpha);
   const float sin_a = std::sin(alpha);
+  const float chord = std::max(reference.chord, 1.0e-8f);
+  const float s_ref = chord * 1.0f;
 
   ForceCoefficients coeffs;
+  coeffs.fx = subtract_p_inf ? diagnostics.fx_gauge : diagnostics.fx_abs;
+  coeffs.fy = subtract_p_inf ? diagnostics.fy_gauge : diagnostics.fy_abs;
   for (const int face : wall_faces) {
     const int owner = mesh.face_owner[face];
     const float p = cell_pressure[owner];
-    const float nx = mesh.face_normal[3 * face + 0];
-    const float ny = mesh.face_normal[3 * face + 1];
-    const float area = mesh.face_area[face];
-
-    const float dfx = p * nx * area;
-    const float dfy = p * ny * area;
-    coeffs.fx += dfx;
-    coeffs.fy += dfy;
+    const float pressure = subtract_p_inf ? (p - reference.p_inf) : p;
+    const std::array<float, 3> nA = face_nA(mesh, face);
+    const float dfx = -pressure * nA[0];
+    const float dfy = -pressure * nA[1];
 
     const float x = mesh.face_center[3 * face + 0] - reference.x_ref;
     const float y = mesh.face_center[3 * face + 1] - reference.y_ref;
@@ -213,10 +287,9 @@ ForceCoefficients integrate_pressure_forces(const UnstructuredMesh& mesh,
   coeffs.drag = coeffs.fx * cos_a + coeffs.fy * sin_a;
   coeffs.lift = -coeffs.fx * sin_a + coeffs.fy * cos_a;
 
-  const float chord = std::max(reference.chord, 1.0e-8f);
-  coeffs.cd = coeffs.drag / (q_inf * chord);
-  coeffs.cl = coeffs.lift / (q_inf * chord);
-  coeffs.cm = coeffs.moment / (q_inf * chord * chord);
+  coeffs.cd = coeffs.drag / (q_inf * s_ref);
+  coeffs.cl = coeffs.lift / (q_inf * s_ref);
+  coeffs.cm = coeffs.moment / (q_inf * s_ref * chord);
   return coeffs;
 }
 }  // namespace cfd::core

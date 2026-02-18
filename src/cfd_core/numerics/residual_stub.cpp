@@ -11,6 +11,7 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -26,6 +27,8 @@
 #endif
 
 namespace {
+constexpr float kPi = 3.14159265358979323846f;
+
 std::vector<float> make_default_phi(const cfd::core::UnstructuredMesh& mesh) {
   std::vector<float> phi(static_cast<std::size_t>(mesh.num_cells), 1.0f);
   for (int c = 0; c < mesh.num_cells; ++c) {
@@ -195,6 +198,10 @@ std::string get_string(const std::unordered_map<std::string, std::string>& kv, c
   return it->second;
 }
 
+bool has_key(const std::unordered_map<std::string, std::string>& kv, const char* key) {
+  return kv.find(key) != kv.end();
+}
+
 float get_float(const std::unordered_map<std::string, std::string>& kv, const char* key,
                 const float fallback) {
   const auto it = kv.find(key);
@@ -245,6 +252,47 @@ std::array<float, 3> get_vec3(const std::unordered_map<std::string, std::string>
     return fallback;
   }
   return values;
+}
+
+std::string to_lower_copy(std::string value) {
+  std::transform(value.begin(), value.end(), value.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return value;
+}
+
+cfd::core::EulerFluxScheme parse_flux_scheme(const std::string& value,
+                                             const cfd::core::EulerFluxScheme fallback) {
+  const std::string normalized = to_lower_copy(trim_copy(value));
+  if (normalized == "hllc") {
+    return cfd::core::EulerFluxScheme::kHllc;
+  }
+  if (normalized == "rusanov") {
+    return cfd::core::EulerFluxScheme::kRusanov;
+  }
+  return fallback;
+}
+
+cfd::core::LimiterType parse_limiter_type(const std::string& value,
+                                          const cfd::core::LimiterType fallback) {
+  const std::string normalized = to_lower_copy(trim_copy(value));
+  if (normalized == "venkat" || normalized == "venkatakrishnan") {
+    return cfd::core::LimiterType::kVenkat;
+  }
+  if (normalized == "minmod") {
+    return cfd::core::LimiterType::kMinmod;
+  }
+  return fallback;
+}
+
+bool parse_on_off(const std::string& value, const bool fallback) {
+  const std::string normalized = to_lower_copy(trim_copy(value));
+  if (normalized == "on" || normalized == "true" || normalized == "yes" || normalized == "1") {
+    return true;
+  }
+  if (normalized == "off" || normalized == "false" || normalized == "no" || normalized == "0") {
+    return false;
+  }
+  return fallback;
 }
 }  // namespace
 
@@ -363,6 +411,16 @@ RunSummary run_case(const std::string& case_path, const std::string& out_dir,
       get_float(case_kv, "residual_reduction_target", euler_config.residual_reduction_target);
     euler_config.force_stability_tol =
       get_float(case_kv, "force_stability_tol", euler_config.force_stability_tol);
+    euler_config.force_stability_window =
+      get_int(case_kv, "force_stability_window", euler_config.force_stability_window);
+    euler_config.force_mean_drift_tol =
+      get_float(case_kv, "force_mean_drift_tol", euler_config.force_mean_drift_tol);
+    euler_config.startup_first_order_iters =
+      get_int(case_kv, "startup_first_order_iters", euler_config.startup_first_order_iters);
+    euler_config.rk_stages = get_int(case_kv, "rk_stages", euler_config.rk_stages);
+    euler_config.local_time_stepping = parse_on_off(
+      get_string(case_kv, "local_time_stepping", euler_config.local_time_stepping ? "on" : "off"),
+      euler_config.local_time_stepping);
     euler_config.gamma = get_float(case_kv, "gamma", euler_config.gamma);
     euler_config.gas_constant = get_float(case_kv, "gas_constant", euler_config.gas_constant);
     euler_config.mach = get_float(case_kv, "mach", euler_config.mach);
@@ -372,6 +430,118 @@ RunSummary run_case(const std::string& case_path, const std::string& out_dir,
     euler_config.rho_inf = get_float(case_kv, "rho_inf", euler_config.rho_inf);
     euler_config.x_ref = get_float(case_kv, "x_ref", euler_config.x_ref);
     euler_config.y_ref = get_float(case_kv, "y_ref", euler_config.y_ref);
+    euler_config.flux_scheme = parse_flux_scheme(
+      get_string(case_kv, "flux", "rusanov"), euler_config.flux_scheme);
+    euler_config.limiter = parse_limiter_type(
+      get_string(case_kv, "limiter", "minmod"), euler_config.limiter);
+
+    const bool has_low_mach_fix_key = has_key(case_kv, "low_mach_fix");
+    const bool low_mach_fix_token = parse_on_off(
+      get_string(case_kv, "low_mach_fix", euler_config.low_mach_fix ? "on" : "off"),
+      euler_config.low_mach_fix);
+    const bool has_precond_key = has_key(case_kv, "precond") || has_key(case_kv, "precond_on");
+    const std::string precond_token = has_key(case_kv, "precond")
+                                        ? get_string(case_kv, "precond", "on")
+                                        : get_string(case_kv, "precond_on", "on");
+    if (has_precond_key) {
+      euler_config.precond_on = parse_on_off(precond_token, euler_config.precond_on);
+    } else {
+      euler_config.precond_on = low_mach_fix_token;
+    }
+
+    euler_config.precond_mach_ref = get_float(
+      case_kv, "precond_mach_ref",
+      get_float(case_kv, "mach_ref", euler_config.precond_mach_ref));
+    euler_config.precond_mach_min =
+      get_float(case_kv, "precond_mach_min", euler_config.precond_mach_min);
+    euler_config.precond_beta_min =
+      get_float(case_kv, "precond_beta_min", euler_config.precond_beta_min);
+    euler_config.precond_beta_max =
+      get_float(case_kv, "precond_beta_max", euler_config.precond_beta_max);
+    euler_config.precond_farfield_bc = parse_on_off(
+      get_string(case_kv, "precond_farfield_bc", euler_config.precond_farfield_bc ? "on" : "off"),
+      euler_config.precond_farfield_bc);
+    const float stabilization_floor_fallback = get_float(
+      case_kv, "stabilization_mach_floor", euler_config.stabilization_mach_floor_target);
+    euler_config.stabilization_mach_floor_start = get_float(
+      case_kv, "stabilization_mach_floor_start", stabilization_floor_fallback);
+    euler_config.stabilization_mach_floor_target = get_float(
+      case_kv, "stabilization_mach_floor_target", stabilization_floor_fallback);
+    euler_config.stabilization_mach_floor_k_start = get_float(
+      case_kv, "stabilization_mach_floor_k_start", euler_config.stabilization_mach_floor_k_start);
+    euler_config.stabilization_mach_floor_k_target = get_float(
+      case_kv, "stabilization_mach_floor_k_target", euler_config.stabilization_mach_floor_k_target);
+    euler_config.stabilization_ramp_iters =
+      get_int(case_kv, "stabilization_ramp_iters", euler_config.stabilization_ramp_iters);
+
+    euler_config.low_mach_fix = has_low_mach_fix_key ? low_mach_fix_token : euler_config.precond_on;
+    euler_config.mach_cutoff = get_float(case_kv, "mach_cutoff", euler_config.mach_cutoff);
+    euler_config.all_speed_flux_fix = parse_on_off(
+      get_string(case_kv, "all_speed_flux_fix", euler_config.all_speed_flux_fix ? "on" : "off"),
+      euler_config.all_speed_flux_fix);
+    euler_config.all_speed_mach_cutoff = get_float(case_kv, "all_speed_mach_cutoff",
+                                                   euler_config.all_speed_mach_cutoff);
+    if (euler_config.all_speed_mach_cutoff <= 0.0f) {
+      euler_config.all_speed_mach_cutoff = 0.25f;
+    }
+    euler_config.all_speed_f_min = get_float(
+      case_kv, "all_speed_f_min",
+      get_float(case_kv, "all_speed_theta_min", euler_config.all_speed_f_min));
+    if (euler_config.all_speed_f_min <= 0.0f) {
+      euler_config.all_speed_f_min = 0.05f;
+    }
+    euler_config.all_speed_f_min = std::clamp(euler_config.all_speed_f_min, 1.0e-6f, 1.0f);
+    euler_config.all_speed_ramp_start_iter =
+      get_int(case_kv, "all_speed_ramp_start_iter", euler_config.all_speed_ramp_start_iter);
+    euler_config.all_speed_ramp_iters =
+      get_int(case_kv, "all_speed_ramp_iters", euler_config.all_speed_ramp_iters);
+    euler_config.all_speed_ramp_start_iter = std::max(euler_config.all_speed_ramp_start_iter, 0);
+    euler_config.all_speed_ramp_iters = std::max(euler_config.all_speed_ramp_iters, 0);
+    euler_config.all_speed_staged_controller =
+      parse_on_off(get_string(case_kv, "all_speed_staged_controller",
+                              euler_config.all_speed_staged_controller ? "on" : "off"),
+                   euler_config.all_speed_staged_controller);
+    euler_config.all_speed_stage_a_min_iters =
+      std::max(get_int(case_kv, "all_speed_stage_a_min_iters",
+                       euler_config.all_speed_stage_a_min_iters),
+               0);
+    euler_config.all_speed_stage_a_max_iters =
+      std::max(get_int(case_kv, "all_speed_stage_a_max_iters",
+                       euler_config.all_speed_stage_a_max_iters),
+               0);
+    euler_config.all_speed_stage_f_min_high = get_float(
+      case_kv, "all_speed_stage_f_min_high", euler_config.all_speed_stage_f_min_high);
+    euler_config.all_speed_stage_f_min_mid = get_float(
+      case_kv, "all_speed_stage_f_min_mid", euler_config.all_speed_stage_f_min_mid);
+    euler_config.all_speed_stage_f_min_low = get_float(
+      case_kv, "all_speed_stage_f_min_low", euler_config.all_speed_stage_f_min_low);
+    euler_config.all_speed_pjump_wall_target = get_float(
+      case_kv, "all_speed_pjump_wall_target", euler_config.all_speed_pjump_wall_target);
+    euler_config.all_speed_pjump_spike_factor = get_float(
+      case_kv, "all_speed_pjump_spike_factor", euler_config.all_speed_pjump_spike_factor);
+    euler_config.all_speed_pjump_hold_iters =
+      std::max(get_int(case_kv, "all_speed_pjump_hold_iters",
+                       euler_config.all_speed_pjump_hold_iters),
+               1);
+    euler_config.all_speed_freeze_iters =
+      std::max(get_int(case_kv, "all_speed_freeze_iters", euler_config.all_speed_freeze_iters), 0);
+    euler_config.all_speed_cfl_drop_factor = get_float(
+      case_kv, "all_speed_cfl_drop_factor", euler_config.all_speed_cfl_drop_factor);
+    euler_config.all_speed_cfl_restore_factor = get_float(
+      case_kv, "all_speed_cfl_restore_factor", euler_config.all_speed_cfl_restore_factor);
+    euler_config.all_speed_cfl_min_scale = get_float(
+      case_kv, "all_speed_cfl_min_scale", euler_config.all_speed_cfl_min_scale);
+    euler_config.aoa0_symmetry_enforce = parse_on_off(
+      get_string(case_kv, "aoa0_symmetry_enforce",
+                 euler_config.aoa0_symmetry_enforce ? "on" : "off"),
+      euler_config.aoa0_symmetry_enforce);
+    euler_config.aoa0_symmetry_enforce_interval =
+      std::max(get_int(case_kv, "aoa0_symmetry_enforce_interval",
+                       euler_config.aoa0_symmetry_enforce_interval),
+               0);
+    if (euler_config.force_mean_drift_tol <= 0.0f) {
+      euler_config.force_mean_drift_tol = euler_config.force_stability_tol;
+    }
 
     euler_config.mesh.airfoil_source =
       get_string(case_kv, "airfoil_source", euler_config.mesh.airfoil_source);
@@ -389,6 +559,50 @@ RunSummary run_case(const std::string& case_path, const std::string& out_dir,
 
     const EulerRunResult euler_result = run_euler_airfoil_case(euler_config, resolved_backend);
     const EulerIterationRecord& final_record = euler_result.history.back();
+    float rho_inf = euler_config.rho_inf;
+    if (rho_inf <= 0.0f) {
+      rho_inf = euler_config.p_inf / (euler_config.gas_constant * euler_config.t_inf);
+    }
+    const float aoa_rad = euler_config.aoa_deg * (kPi / 180.0f);
+    const float a_inf =
+      std::sqrt(euler_config.gamma * euler_config.p_inf / std::max(rho_inf, 1.0e-12f));
+    const float speed_inf = std::max(euler_config.mach, 0.0f) * a_inf;
+    const float u_inf = speed_inf * std::cos(aoa_rad);
+    const float v_inf = speed_inf * std::sin(aoa_rad);
+    const float chord = std::max(euler_config.mesh.chord, 1.0e-8f);
+    const float s_ref = chord * 1.0f;
+    const float q_inf = 0.5f * rho_inf * speed_inf * speed_inf + 1.0e-12f;
+    const FreestreamReference reference = {
+      rho_inf,
+      euler_config.p_inf,
+      euler_config.aoa_deg,
+      speed_inf,
+      chord,
+      euler_config.x_ref,
+      euler_config.y_ref,
+    };
+    const PressureForceDiagnostics pressure_diag =
+      compute_pressure_force_diagnostics(euler_result.mesh, euler_result.p, reference, "wall");
+    const ForceCoefficients forces_abs =
+      integrate_pressure_forces(euler_result.mesh, euler_result.p, reference, "wall", false);
+    const ForceCoefficients forces_gauge =
+      integrate_pressure_forces(euler_result.mesh, euler_result.p, reference, "wall", true);
+    const float sum_nA_mag = std::sqrt(pressure_diag.sum_nA_x * pressure_diag.sum_nA_x +
+                                       pressure_diag.sum_nA_y * pressure_diag.sum_nA_y);
+
+    std::cout << "aoa_deg=" << euler_config.aoa_deg << "\n";
+    std::cout << "aoa_rad=" << aoa_rad << "\n";
+    std::cout << "u_inf=" << u_inf << "\n";
+    std::cout << "v_inf=" << v_inf << "\n";
+    std::cout << "S_ref=" << s_ref << "\n";
+    std::cout << "wall_faces_integrated=" << pressure_diag.integrated_face_count << "\n";
+    std::cout << "sum_nA_x=" << pressure_diag.sum_nA_x << "\n";
+    std::cout << "sum_nA_y=" << pressure_diag.sum_nA_y << "\n";
+    std::cout << "sum_nA_mag=" << sum_nA_mag << "\n";
+    std::cout << "Fx_abs=" << pressure_diag.fx_abs << "\n";
+    std::cout << "Fy_abs=" << pressure_diag.fy_abs << "\n";
+    std::cout << "Fx_gauge=" << pressure_diag.fx_gauge << "\n";
+    std::cout << "Fy_gauge=" << pressure_diag.fy_gauge << "\n";
 
     {
       std::ofstream log(run_log_path, std::ios::trunc);
@@ -403,9 +617,146 @@ RunSummary run_case(const std::string& case_path, const std::string& out_dir,
       log << "residual_l1=" << final_record.residual_l1 << "\n";
       log << "residual_l2=" << final_record.residual_l2 << "\n";
       log << "residual_linf=" << final_record.residual_linf << "\n";
-      log << "cl=" << euler_result.forces.cl << "\n";
-      log << "cd=" << euler_result.forces.cd << "\n";
-      log << "cm=" << euler_result.forces.cm << "\n";
+      log << "cl=" << forces_gauge.cl << "\n";
+      log << "cd=" << forces_gauge.cd << "\n";
+      log << "cm=" << forces_gauge.cm << "\n";
+      log << "aoa_deg=" << euler_config.aoa_deg << "\n";
+      log << "aoa_rad=" << aoa_rad << "\n";
+      log << "u_inf=" << u_inf << "\n";
+      log << "v_inf=" << v_inf << "\n";
+      log << "wall_faces_integrated=" << pressure_diag.integrated_face_count << "\n";
+      log << "normal_is_unit=" << (pressure_diag.normal_is_unit ? 1 : 0) << "\n";
+      log << "sum_nA_x=" << pressure_diag.sum_nA_x << "\n";
+      log << "sum_nA_y=" << pressure_diag.sum_nA_y << "\n";
+      log << "sum_nA_mag=" << sum_nA_mag << "\n";
+      log << "Fx_abs=" << pressure_diag.fx_abs << "\n";
+      log << "Fy_abs=" << pressure_diag.fy_abs << "\n";
+      log << "Fx_gauge=" << pressure_diag.fx_gauge << "\n";
+      log << "Fy_gauge=" << pressure_diag.fy_gauge << "\n";
+      log << "q_inf=" << q_inf << "\n";
+      log << "V_inf=" << speed_inf << "\n";
+      log << "rho_inf=" << rho_inf << "\n";
+      log << "S_ref=" << s_ref << "\n";
+      log << "chord=" << chord << "\n";
+      log << "Fx=" << forces_gauge.fx << "\n";
+      log << "Fy=" << forces_gauge.fy << "\n";
+      log << "L=" << forces_gauge.lift << "\n";
+      log << "D=" << forces_gauge.drag << "\n";
+      log << "cl_abs=" << forces_abs.cl << "\n";
+      log << "cd_abs=" << forces_abs.cd << "\n";
+      log << "cm_abs=" << forces_abs.cm << "\n";
+      log << "flux="
+          << (euler_config.flux_scheme == EulerFluxScheme::kHllc ? "hllc" : "rusanov") << "\n";
+      log << "limiter="
+          << (euler_config.limiter == LimiterType::kVenkat ? "venkat" : "minmod") << "\n";
+      log << "low_mach_fix=" << (euler_config.low_mach_fix ? "on" : "off") << "\n";
+      log << "mach_cutoff=" << euler_config.mach_cutoff << "\n";
+      log << "all_speed_flux_fix=" << (euler_config.all_speed_flux_fix ? "on" : "off") << "\n";
+      log << "all_speed_mach_cutoff=" << euler_config.all_speed_mach_cutoff << "\n";
+      log << "all_speed_f_min=" << euler_config.all_speed_f_min << "\n";
+      log << "all_speed_ramp_start_iter=" << euler_config.all_speed_ramp_start_iter << "\n";
+      log << "all_speed_ramp_iters=" << euler_config.all_speed_ramp_iters << "\n";
+      log << "all_speed_staged_controller="
+          << (euler_config.all_speed_staged_controller ? "on" : "off") << "\n";
+      log << "all_speed_stage_a_min_iters=" << euler_config.all_speed_stage_a_min_iters << "\n";
+      log << "all_speed_stage_a_max_iters=" << euler_config.all_speed_stage_a_max_iters << "\n";
+      log << "all_speed_stage_f_min_high=" << euler_config.all_speed_stage_f_min_high << "\n";
+      log << "all_speed_stage_f_min_mid=" << euler_config.all_speed_stage_f_min_mid << "\n";
+      log << "all_speed_stage_f_min_low=" << euler_config.all_speed_stage_f_min_low << "\n";
+      log << "all_speed_pjump_wall_target=" << euler_config.all_speed_pjump_wall_target << "\n";
+      log << "all_speed_pjump_spike_factor=" << euler_config.all_speed_pjump_spike_factor << "\n";
+      log << "all_speed_pjump_hold_iters=" << euler_config.all_speed_pjump_hold_iters << "\n";
+      log << "all_speed_freeze_iters=" << euler_config.all_speed_freeze_iters << "\n";
+      log << "all_speed_cfl_drop_factor=" << euler_config.all_speed_cfl_drop_factor << "\n";
+      log << "all_speed_cfl_restore_factor=" << euler_config.all_speed_cfl_restore_factor << "\n";
+      log << "all_speed_cfl_min_scale=" << euler_config.all_speed_cfl_min_scale << "\n";
+      log << "aoa0_symmetry_enforce=" << (euler_config.aoa0_symmetry_enforce ? "on" : "off")
+          << "\n";
+      log << "aoa0_symmetry_enforce_interval=" << euler_config.aoa0_symmetry_enforce_interval
+          << "\n";
+      log << "precond=" << (euler_config.precond_on ? "on" : "off") << "\n";
+      log << "precond_mach_ref=" << euler_config.precond_mach_ref << "\n";
+      log << "precond_mach_min=" << euler_config.precond_mach_min << "\n";
+      log << "precond_beta_min=" << euler_config.precond_beta_min << "\n";
+      log << "precond_beta_max=" << euler_config.precond_beta_max << "\n";
+      log << "precond_farfield_bc=" << (euler_config.precond_farfield_bc ? "on" : "off") << "\n";
+      log << "stabilization_mach_floor_start=" << euler_config.stabilization_mach_floor_start
+          << "\n";
+      log << "stabilization_mach_floor_target=" << euler_config.stabilization_mach_floor_target
+          << "\n";
+      log << "stabilization_mach_floor_k_start=" << euler_config.stabilization_mach_floor_k_start
+          << "\n";
+      log << "stabilization_mach_floor_k_target="
+          << euler_config.stabilization_mach_floor_k_target << "\n";
+      log << "stabilization_ramp_iters=" << euler_config.stabilization_ramp_iters << "\n";
+      log << "precond_mach_ref_effective=" << euler_result.precond_mach_ref_effective << "\n";
+      log << "precond_beta_min_effective=" << euler_result.precond_beta_min_effective << "\n";
+      log << "precond_beta_max_effective=" << euler_result.precond_beta_max_effective << "\n";
+      log << "stabilization_mach_floor_start_effective="
+          << euler_result.stabilization_mach_floor_start_effective << "\n";
+      log << "stabilization_mach_floor_target_effective="
+          << euler_result.stabilization_mach_floor_target_effective << "\n";
+      log << "stabilization_mach_floor_k_start_effective="
+          << euler_result.stabilization_mach_floor_k_start_effective << "\n";
+      log << "stabilization_mach_floor_k_target_effective="
+          << euler_result.stabilization_mach_floor_k_target_effective << "\n";
+      log << "stabilization_ramp_iters_effective="
+          << euler_result.stabilization_ramp_iters_effective << "\n";
+      log << "stabilization_mach_floor_final=" << euler_result.stabilization_mach_floor_final
+          << "\n";
+      log << "beta_min=" << euler_result.beta_min << "\n";
+      log << "beta_max=" << euler_result.beta_max << "\n";
+      log << "beta_mean=" << euler_result.beta_mean << "\n";
+      log << "mach_local_min=" << euler_result.mach_local_min << "\n";
+      log << "mach_local_max=" << euler_result.mach_local_max << "\n";
+      log << "mach_local_mean=" << euler_result.mach_local_mean << "\n";
+      log << "acoustic_scale_min=" << euler_result.acoustic_scale_min << "\n";
+      log << "acoustic_scale_max=" << euler_result.acoustic_scale_max << "\n";
+      log << "acoustic_scale_mean=" << euler_result.acoustic_scale_mean << "\n";
+      log << "acoustic_scale_final_min=" << euler_result.acoustic_scale_final_min << "\n";
+      log << "acoustic_scale_final_max=" << euler_result.acoustic_scale_final_max << "\n";
+      log << "acoustic_scale_final_mean=" << euler_result.acoustic_scale_final_mean << "\n";
+      log << "wall_adjacent_acoustic_scale_min=" << euler_result.wall_adjacent_acoustic_scale_min
+          << "\n";
+      log << "wall_adjacent_acoustic_scale_p01=" << euler_result.wall_adjacent_acoustic_scale_p01
+          << "\n";
+      log << "wall_adjacent_acoustic_scale_p50=" << euler_result.wall_adjacent_acoustic_scale_p50
+          << "\n";
+      log << "wall_adjacent_stabilization_scale_min="
+          << euler_result.wall_adjacent_stabilization_scale_min << "\n";
+      log << "wall_adjacent_stabilization_scale_p01="
+          << euler_result.wall_adjacent_stabilization_scale_p01 << "\n";
+      log << "wall_adjacent_stabilization_scale_p50="
+          << euler_result.wall_adjacent_stabilization_scale_p50 << "\n";
+      log << "wall_adjacent_acoustic_scale_final_min="
+          << euler_result.wall_adjacent_acoustic_scale_final_min << "\n";
+      log << "wall_adjacent_acoustic_scale_final_p01="
+          << euler_result.wall_adjacent_acoustic_scale_final_p01 << "\n";
+      log << "wall_adjacent_acoustic_scale_final_p50="
+          << euler_result.wall_adjacent_acoustic_scale_final_p50 << "\n";
+      log << "dissipation_debug_csv=" << euler_result.dissipation_debug_csv_path.string() << "\n";
+      log << "startup_first_order_iters=" << euler_config.startup_first_order_iters << "\n";
+      log << "rk_stages=" << euler_config.rk_stages << "\n";
+      log << "local_time_stepping=" << (euler_config.local_time_stepping ? "on" : "off") << "\n";
+      log << "force_stability_window=" << euler_config.force_stability_window << "\n";
+      log << "force_mean_drift_tol=" << euler_config.force_mean_drift_tol << "\n";
+      log << "force_window_stable_final=" << (euler_result.force_window_stable_final ? 1 : 0)
+          << "\n";
+      log << "force_mean_drift_stable_final="
+          << (euler_result.force_mean_drift_stable_final ? 1 : 0) << "\n";
+      log << "force_physical_converged_final="
+          << (euler_result.force_physical_converged_final ? 1 : 0) << "\n";
+      log << "force_mean_dcl_final=" << euler_result.force_mean_dcl_final << "\n";
+      log << "force_mean_dcd_final=" << euler_result.force_mean_dcd_final << "\n";
+      log << "force_mean_dcm_final=" << euler_result.force_mean_dcm_final << "\n";
+      log << "pressure_fluctuation_nd_max_final="
+          << euler_result.pressure_fluctuation_nd_max_final << "\n";
+      log << "pressure_fluctuation_nd_wall_final="
+          << euler_result.pressure_fluctuation_nd_wall_final << "\n";
+      log << "pressure_fluctuation_nd_farfield_final="
+          << euler_result.pressure_fluctuation_nd_farfield_final << "\n";
+      log << "cd_times_mach_final=" << euler_result.cd_times_mach_final << "\n";
+      log << "max_wall_mass_flux=" << euler_result.max_wall_mass_flux << "\n";
       // TODO(numerics): Add implicit pseudo-time and local Jacobian preconditioning.
       // TODO(physics): Extend from Euler to viscous Navier-Stokes terms.
     }
@@ -419,9 +770,9 @@ RunSummary run_case(const std::string& case_path, const std::string& out_dir,
     summary.residual_l1 = final_record.residual_l1;
     summary.residual_l2 = final_record.residual_l2;
     summary.residual_linf = final_record.residual_linf;
-    summary.cl = euler_result.forces.cl;
-    summary.cd = euler_result.forces.cd;
-    summary.cm = euler_result.forces.cm;
+    summary.cl = forces_gauge.cl;
+    summary.cd = forces_gauge.cd;
+    summary.cm = forces_gauge.cm;
     return summary;
   }
 

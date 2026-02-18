@@ -9,7 +9,6 @@ namespace {
 constexpr int kNumVars = 5;
 constexpr float kRhoFloor = 1.0e-8f;
 constexpr float kPressureFloor = 1.0e-8f;
-constexpr int kFarfieldBoundary = 1;
 constexpr int kWallBoundary = 2;
 
 struct PrimitiveStateDevice {
@@ -124,18 +123,17 @@ __device__ void rusanov_flux(const ConservativeStateDevice& left, const Conserva
 __device__ void slip_wall_flux(const ConservativeStateDevice& interior, const float nx,
                                const float ny, const float nz, const float gamma, float* flux,
                                float* max_wave_speed) {
-  const PrimitiveStateDevice primitive = conservative_to_primitive(interior, gamma);
-  const float un = primitive.u * nx + primitive.v * ny + primitive.w * nz;
-  const float a = speed_of_sound(primitive, gamma);
-  if (max_wave_speed != nullptr) {
-    *max_wave_speed = fabsf(un) + a;
-  }
-
-  flux[0] = 0.0f;
-  flux[1] = primitive.p * nx;
-  flux[2] = primitive.p * ny;
-  flux[3] = primitive.p * nz;
-  flux[4] = 0.0f;
+  const PrimitiveStateDevice interior_primitive = conservative_to_primitive(interior, gamma);
+  const float un = interior_primitive.u * nx + interior_primitive.v * ny + interior_primitive.w * nz;
+  const PrimitiveStateDevice reflected_primitive = {
+    interior_primitive.rho,
+    interior_primitive.u - 2.0f * un * nx,
+    interior_primitive.v - 2.0f * un * ny,
+    interior_primitive.w - 2.0f * un * nz,
+    interior_primitive.p,
+  };
+  const ConservativeStateDevice ghost = primitive_to_conservative(reflected_primitive, gamma);
+  rusanov_flux(interior, ghost, nx, ny, nz, gamma, flux, max_wave_speed);
 }
 
 __device__ float gradient_value(const float* gradients, const int cell, const int var,

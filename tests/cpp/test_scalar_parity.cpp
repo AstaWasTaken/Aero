@@ -21,7 +21,7 @@ int main() {
     config.phi[c] = 0.5f + 0.2f * static_cast<float>(c);
   }
 
-  config.output_dir = std::filesystem::path("parity_cpu");
+  config.output_dir = std::filesystem::path("out/tests/scalar_parity_cpu");
   const cfd::core::ScalarRunResult cpu_run = cfd::core::run_scalar_case(mesh, config, "cpu");
 
   if (!cfd::core::cuda_available()) {
@@ -29,7 +29,7 @@ int main() {
     return 0;
   }
 
-  config.output_dir = std::filesystem::path("parity_cuda");
+  config.output_dir = std::filesystem::path("out/tests/scalar_parity_cuda");
   const cfd::core::ScalarRunResult cuda_run = cfd::core::run_scalar_case(mesh, config, "cuda");
 
   if (cpu_run.residual.size() != cuda_run.residual.size()) {

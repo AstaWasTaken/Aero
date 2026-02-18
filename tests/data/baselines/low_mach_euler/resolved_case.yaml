@@ -1,0 +1,27 @@
+name: low_mach_euler_mechanism_baseline
+case_type: euler_airfoil_2d
+geometry:
+  type: airfoil2d
+  profile: NACA0012
+  chord: 1.0
+mesh:
+  generator: structured_o
+  circumferential: 72
+  radial: 18
+  farfield_radius: 12.0
+  radial_stretch: 1.35
+flow:
+  mach: 0.01
+  aoa_deg: 0.0
+solver:
+  equations: euler
+  iterations: 1200
+  min_iterations: 300
+numerics:
+  flux: hllc
+  limiter: minmod
+  precond: off
+  all_speed_flux_fix: on
+  all_speed_f_min: 0.05
+  all_speed_ramp_start_iter: 100
+  all_speed_ramp_iters: 200

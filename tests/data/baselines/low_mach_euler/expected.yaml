@@ -1,0 +1,8 @@
+mechanism:
+  mach: 0.01
+  iterations: 1200
+  min_iterations: 300
+  all_speed_f_min: 0.05
+  all_speed_ramp_start_iter: 100
+  all_speed_ramp_iters: 200
+  cd_times_mach_improvement_factor: 0.95

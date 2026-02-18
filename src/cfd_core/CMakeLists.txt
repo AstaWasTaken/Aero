@@ -6,6 +6,12 @@ set(CFD_CORE_SOURCES
   numerics/residual_stub.cpp
   io/io_vtk_stub.cpp
   post/forces.cpp
+  solvers/euler/boundary_conditions.cpp
+  solvers/euler/convergence_monitor.cpp
+  solvers/euler/mesh_geometry.cpp
+  solvers/euler/preconditioning.cpp
+  solvers/euler/residual_assembly.cpp
+  solvers/euler/time_integrator.cpp
   solvers/euler_solver.cpp
 )
 

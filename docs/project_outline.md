@@ -1,64 +1,108 @@
 # Project Outline
 
+## Snapshot (Feb 17, 2026)
+
+- Project: AeroCFD
+- Current phase: `P2` (Euler), with all-speed steady robustness work in progress
+- Direction: CUDA-first unstructured finite-volume solver with CPU fallback
+- End goal: reliable aerodynamic outputs for airfoils first, then finite wings
+
 ## Mission
 
-Build a reliable CFD solver for aerodynamic analysis of airfoils (and later wings), with a CUDA-first acceleration path and a CPU fallback for validation and portability.
+Build a practical, verification-driven CFD solver that is:
 
-## Current Progress Snapshot
+- accurate enough to trust trends (`Cp`, `Cl`, `Cd`, `Cm`)
+- fast enough for sweeps (AoA/Mach/Re)
+- structured enough to extend from Euler -> Navier-Stokes -> RANS
 
-### M1 complete
+## Guiding principles
 
-- Deterministic unstructured mesh generation (demo path).
-- Scalar advection residual assembly on CPU and CUDA.
-- CUDA face-kernel pattern with atomic accumulation.
-- VTU output and CLI wiring.
+- correctness before speed
+- one FV framework for 2D and 3D
+- keep major fields GPU-resident where possible
+- every run should be reproducible (resolved config + logs + CSV + VTU)
+- regression gate stays green before new model work
 
-### M2 complete
+## Scope
 
-- 2D compressible Euler airfoil solver on CPU.
-- Rusanov flux + MUSCL/minmod reconstruction.
-- Slip-wall and farfield boundary conditions.
-- Cp/Cl/Cd/Cm post-processing.
-- Euler regression test coverage.
+Core path:
 
-### M2.5 complete
+- Euler foundation (current)
+- laminar Navier-Stokes
+- RANS SA, then RANS SST
 
-- CUDA acceleration for Euler residual assembly hot path:
-  - face reconstruction
-  - Rusanov face flux
-  - per-cell residual accumulation
-- CPU-driven pseudo-time loop retained for now.
-- CPU/CUDA Euler residual parity test added.
+Optional/bonus path:
 
-## Next Stages
+- transition model (`gamma-Re_theta` style)
+- URANS with dual-time stepping
 
-### Near term
+Non-goals for early releases:
 
-- Keep state/residual resident on GPU across iterations.
-- Move gradient construction to GPU.
-- Strengthen solver robustness and convergence controls.
+- LES/DNS
+- moving/deforming mesh
+- reacting multi-species flow
+- full MPI scaling
 
-### Mid term
+## Numerical direction
 
-- Extend from Euler to viscous Navier-Stokes / RANS.
-- Add turbulence-model infrastructure (SA / SST).
-- Expand case coverage and validation datasets.
+- spatial: cell-centered FV, 2nd-order MUSCL reconstruction
+- gradients: Green-Gauss baseline, least-squares production path
+- inviscid flux: Rusanov baseline, HLLC production
+- low-Mach handling: all-speed flux treatment and controlled continuation
+- steady strategy: robust pseudo-time convergence with force-based stopping
 
-### Long term
+## Milestones and definition of done
 
-- 3D finite-wing workflows.
-- Unsteady pathway (URANS / dual-time stepping).
-- Throughput optimization for sweeps and larger runs.
+### P0 - Repo skeleton + CI + CLI
 
-## Backend Strategy
+- DoD: project builds cleanly, smoke tests pass, basic case run works
 
-- Default backend: CPU.
-- Optional backend: CUDA (`CFD_ENABLE_CUDA=ON` and runtime GPU availability).
-- Shared interfaces between CPU and CUDA code paths where possible.
+### P1 - Mesh/metrics + VTU output
 
-## Outputs and Tooling
+- DoD: mesh/metric sanity checks pass, ParaView output is correct
 
-- VTU output for ParaView.
-- CSV outputs for residual and force history.
-- Case snapshot + run log for reproducibility.
-- Python CLI for `run`, `sweep`, `post`, and optional UI.
+### P2 - Euler baseline 
+
+- DoD: stable convergence on reference airfoil cases, regression ladder established, CPU/CUDA parity coverage for core residual behavior
+
+### P3 - Laminar Navier-Stokes
+
+- DoD: viscous terms and no-slip walls verified, laminar benchmarks behave physically
+
+### P4 - RANS SA
+
+- DoD: robust steady convergence and reasonable AoA/Re trend behavior
+
+### P5 - RANS SST
+
+- DoD: improved separated-flow behavior vs SA and stable runs on broader cases
+
+### P6 - Transition (bonus)
+
+- DoD: transition-sensitive drag trends improve on at least one reference case
+
+### P7 - URANS (bonus)
+
+- DoD: dual-time stepping produces stable unsteady histories and restartable runs
+
+### P8 - GPU optimization pass
+
+- DoD: profiling shows meaningful speedup on target cases vs CPU baseline
+
+### P9 - UX/reporting polish
+
+- DoD: sweep -> plots/report bundle workflow is one-command and reproducible
+
+## Validation ladder (high level)
+
+- unit checks: geometry/metrics, invariance, BC sanity
+- regression checks: fixed-case coefficient windows and trend checks
+- parity checks: CPU vs CUDA for critical kernels/metrics
+- physics checks: `AoA=0` symmetry, low-Mach mechanism behavior, refinement trends
+
+## Main risks and mitigations
+
+- low-Mach instability: staged continuation + mechanism tests + conservative defaults
+- implicit complexity creep: keep explicit/LTS path strong first
+- unstructured GPU atomic bottlenecks: profile first, then consider coloring/two-pass options
+- RANS fragility: strict regression gate and robust startup/limiter settings

@@ -10,6 +10,8 @@ namespace {
 constexpr int kNumVars = 5;
 constexpr float kRhoFloor = 1.0e-8f;
 constexpr float kPressureFloor = 1.0e-8f;
+constexpr int kMinComponents = 2;
+constexpr int kMaxComponents = 3;
 
 float primitive_var(const PrimitiveState& primitive, const int var) {
   switch (var) {
@@ -53,13 +55,18 @@ void set_primitive_var(PrimitiveState* primitive, const int var, const float val
   }
 }
 
-float& gradient_ref(std::vector<float>& values, const int cell, const int var, const int component) {
-  return values[static_cast<std::size_t>(((cell * kNumVars + var) * 2 + component))];
+int resolve_num_components(const UnstructuredMesh& mesh) {
+  return std::clamp(mesh.dimension, kMinComponents, kMaxComponents);
 }
 
-float gradient_value(const std::vector<float>& values, const int cell, const int var,
-                     const int component) {
-  return values[static_cast<std::size_t>(((cell * kNumVars + var) * 2 + component))];
+float& gradient_ref(std::vector<float>& values, const int num_components, const int cell,
+                    const int var, const int component) {
+  return values[static_cast<std::size_t>(((cell * kNumVars + var) * num_components + component))];
+}
+
+float gradient_value(const std::vector<float>& values, const int num_components, const int cell,
+                     const int var, const int component) {
+  return values[static_cast<std::size_t>(((cell * kNumVars + var) * num_components + component))];
 }
 }  // namespace
 
@@ -70,13 +77,14 @@ PrimitiveGradients compute_green_gauss_gradients(const UnstructuredMesh& mesh,
   }
 
   PrimitiveGradients gradients;
-  gradients.values.assign(static_cast<std::size_t>(mesh.num_cells) * kNumVars * 2, 0.0f);
+  gradients.num_components = resolve_num_components(mesh);
+  gradients.values.assign(static_cast<std::size_t>(mesh.num_cells) * kNumVars *
+                            gradients.num_components,
+                          0.0f);
 
   for (int face = 0; face < mesh.num_faces; ++face) {
     const int owner = mesh.face_owner[face];
     const int neighbor = mesh.face_neighbor[face];
-    const float nxA = mesh.face_normal[3 * face + 0] * mesh.face_area[face];
-    const float nyA = mesh.face_normal[3 * face + 1] * mesh.face_area[face];
 
     for (int var = 0; var < kNumVars; ++var) {
       const float q_owner = primitive_var(primitive[owner], var);
@@ -86,11 +94,14 @@ PrimitiveGradients compute_green_gauss_gradients(const UnstructuredMesh& mesh,
         q_face = 0.5f * (q_owner + q_neighbor);
       }
 
-      gradient_ref(gradients.values, owner, var, 0) += q_face * nxA;
-      gradient_ref(gradients.values, owner, var, 1) += q_face * nyA;
-      if (neighbor >= 0) {
-        gradient_ref(gradients.values, neighbor, var, 0) -= q_face * nxA;
-        gradient_ref(gradients.values, neighbor, var, 1) -= q_face * nyA;
+      for (int component = 0; component < gradients.num_components; ++component) {
+        const float nA = mesh.face_normal[3 * face + component] * mesh.face_area[face];
+        gradient_ref(gradients.values, gradients.num_components, owner, var, component) +=
+          q_face * nA;
+        if (neighbor >= 0) {
+          gradient_ref(gradients.values, gradients.num_components, neighbor, var, component) -=
+            q_face * nA;
+        }
       }
     }
   }
@@ -98,8 +109,9 @@ PrimitiveGradients compute_green_gauss_gradients(const UnstructuredMesh& mesh,
   for (int cell = 0; cell < mesh.num_cells; ++cell) {
     const float inv_vol = 1.0f / std::max(mesh.cell_volume[cell], 1.0e-12f);
     for (int var = 0; var < kNumVars; ++var) {
-      gradient_ref(gradients.values, cell, var, 0) *= inv_vol;
-      gradient_ref(gradients.values, cell, var, 1) *= inv_vol;
+      for (int component = 0; component < gradients.num_components; ++component) {
+        gradient_ref(gradients.values, gradients.num_components, cell, var, component) *= inv_vol;
+      }
     }
   }
 
@@ -107,9 +119,26 @@ PrimitiveGradients compute_green_gauss_gradients(const UnstructuredMesh& mesh,
 }
 
 float apply_limiter(const LimiterType limiter, const float a, const float b) {
-  if (limiter != LimiterType::kMinmod) {
-    return a;
+  if (limiter == LimiterType::kVenkat) {
+    if (a * b <= 0.0f) {
+      return 0.0f;
+    }
+    const float eps2 = 1.0e-12f * (1.0f + a * a + b * b);
+    const float numerator = (b * b + 2.0f * a * b + eps2) * a;
+    const float denominator = a * a + 2.0f * b * b + a * b + eps2;
+    if (std::abs(denominator) <= 1.0e-20f) {
+      return 0.0f;
+    }
+    const float limited = numerator / denominator;
+    if (!std::isfinite(limited)) {
+      return 0.0f;
+    }
+    if (a > 0.0f) {
+      return std::clamp(limited, 0.0f, a);
+    }
+    return std::clamp(limited, a, 0.0f);
   }
+
   if (a * b <= 0.0f) {
     return 0.0f;
   }
@@ -130,26 +159,33 @@ void reconstruct_interior_face_states(const UnstructuredMesh& mesh,
     return;
   }
 
-  const std::array<float, 2> face_center = {
+  const int num_components = std::clamp(gradients.num_components, kMinComponents, kMaxComponents);
+
+  const std::array<float, 3> face_center = {
     mesh.face_center[3 * face + 0],
     mesh.face_center[3 * face + 1],
+    mesh.face_center[3 * face + 2],
   };
-  const std::array<float, 2> owner_center = {
+  const std::array<float, 3> owner_center = {
     mesh.cell_center[3 * owner + 0],
     mesh.cell_center[3 * owner + 1],
+    mesh.cell_center[3 * owner + 2],
   };
-  const std::array<float, 2> neighbor_center = {
+  const std::array<float, 3> neighbor_center = {
     mesh.cell_center[3 * neighbor + 0],
     mesh.cell_center[3 * neighbor + 1],
+    mesh.cell_center[3 * neighbor + 2],
   };
 
-  const std::array<float, 2> d_owner = {
+  const std::array<float, 3> d_owner = {
     face_center[0] - owner_center[0],
     face_center[1] - owner_center[1],
+    face_center[2] - owner_center[2],
   };
-  const std::array<float, 2> d_neighbor = {
+  const std::array<float, 3> d_neighbor = {
     face_center[0] - neighbor_center[0],
     face_center[1] - neighbor_center[1],
+    face_center[2] - neighbor_center[2],
   };
 
   *left = primitive[owner];
@@ -159,14 +195,15 @@ void reconstruct_interior_face_states(const UnstructuredMesh& mesh,
     const float qo = primitive_var(primitive[owner], var);
     const float qn = primitive_var(primitive[neighbor], var);
 
-    const float grad_o_x = gradient_value(gradients.values, owner, var, 0);
-    const float grad_o_y = gradient_value(gradients.values, owner, var, 1);
-    const float grad_n_x = gradient_value(gradients.values, neighbor, var, 0);
-    const float grad_n_y = gradient_value(gradients.values, neighbor, var, 1);
-
     const float delta_cell = qn - qo;
-    const float delta_owner = grad_o_x * d_owner[0] + grad_o_y * d_owner[1];
-    const float delta_neighbor = grad_n_x * d_neighbor[0] + grad_n_y * d_neighbor[1];
+    float delta_owner = 0.0f;
+    float delta_neighbor = 0.0f;
+    for (int component = 0; component < num_components; ++component) {
+      delta_owner +=
+        gradient_value(gradients.values, num_components, owner, var, component) * d_owner[component];
+      delta_neighbor += gradient_value(gradients.values, num_components, neighbor, var, component) *
+                        d_neighbor[component];
+    }
 
     const float ql = qo + apply_limiter(limiter, delta_owner, delta_cell);
     const float qr = qn + apply_limiter(limiter, delta_neighbor, -delta_cell);

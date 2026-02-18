@@ -2,6 +2,13 @@
 /build/
 /build_*/
 /build-*/
+build*/
+/out/
+/out_*/
+out*/
+/dist/
+/dist_*/
+dist*/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
@@ -9,7 +16,9 @@ compile_commands.json
 
 # Python artifacts
 __pycache__/
+**/__pycache__/
 *.py[cod]
+*.pyc
 *.pyd
 *.so
 *.egg-info/
@@ -19,6 +28,7 @@ __pycache__/
 # Project outputs
 /results/
 *.log
+/tools
 
 # IDE/editor
 .vscode/
@@ -26,7 +36,7 @@ __pycache__/
 .vs/
 *.swp
 CMakeSettings.json
-/out/
 
 # Project Outline
 CFD_Solver_Project_Outline.pdf
+AeroCFD_Expanded_Project_Outline_v1_1.pdf

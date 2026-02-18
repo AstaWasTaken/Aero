@@ -1,6 +1,0 @@
-name: naca0012_alpha_sweep
-base_case: naca0012_2d.yaml
-sweep:
-  aoa_deg: [-2.0, 0.0, 2.0, 4.0, 6.0]
-jobs: 2
-output_root: results/sweep_naca0012

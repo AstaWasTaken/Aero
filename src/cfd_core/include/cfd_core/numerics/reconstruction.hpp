@@ -9,10 +9,12 @@
 namespace cfd::core {
 enum class LimiterType {
   kMinmod = 0,
+  kVenkat = 1,
 };
 
 struct PrimitiveGradients {
-  // [cell][var][component], var=(rho,u,v,w,p), component=(dx,dy)
+  // [cell][var][component], var=(rho,u,v,w,p), component=(x,y,z)
+  int num_components = 2;
   std::vector<float> values;
 };
 

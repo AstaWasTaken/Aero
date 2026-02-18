@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.24)
 
 project(
   AeroCFD
-  VERSION 0.1.0
-  DESCRIPTION "GPU-accelerated CFD scaffold for airfoils and wings"
+  VERSION 0.1.1
+  DESCRIPTION "GPU-accelerated CFD Solver for airfoils and wings"
   LANGUAGES CXX
 )
 
@@ -64,9 +64,34 @@ if(CFD_BUILD_TESTS)
     target_compile_features(cfd_euler_regression_test PRIVATE cxx_std_20)
     add_test(NAME cfd_euler_regression COMMAND cfd_euler_regression_test)
 
+    add_executable(cfd_euler_aoa0_regression_test tests/cpp/test_euler_aoa0_regression.cpp)
+    target_link_libraries(cfd_euler_aoa0_regression_test PRIVATE cfd_core_lib)
+    target_compile_features(cfd_euler_aoa0_regression_test PRIVATE cxx_std_20)
+    add_test(NAME cfd_euler_aoa0_regression COMMAND cfd_euler_aoa0_regression_test)
+
+    add_executable(cfd_euler_aoa0_coeff_test tests/cpp/test_euler_aoa0_regression.cpp)
+    target_link_libraries(cfd_euler_aoa0_coeff_test PRIVATE cfd_core_lib)
+    target_compile_features(cfd_euler_aoa0_coeff_test PRIVATE cxx_std_20)
+    add_test(NAME cfd_euler_aoa0_coeff COMMAND cfd_euler_aoa0_coeff_test)
+
+    add_executable(cfd_euler_wall_sanity_test tests/cpp/test_euler_wall_sanity.cpp)
+    target_link_libraries(cfd_euler_wall_sanity_test PRIVATE cfd_core_lib)
+    target_compile_features(cfd_euler_wall_sanity_test PRIVATE cxx_std_20)
+    add_test(NAME cfd_euler_wall_sanity COMMAND cfd_euler_wall_sanity_test)
+
+    add_executable(cfd_euler_uniform_invariance_test tests/cpp/test_euler_uniform_invariance.cpp)
+    target_link_libraries(cfd_euler_uniform_invariance_test PRIVATE cfd_core_lib)
+    target_compile_features(cfd_euler_uniform_invariance_test PRIVATE cxx_std_20)
+    add_test(NAME cfd_euler_uniform_invariance COMMAND cfd_euler_uniform_invariance_test)
+
     add_executable(cfd_euler_parity_test tests/cpp/test_euler_parity.cpp)
     target_link_libraries(cfd_euler_parity_test PRIVATE cfd_core_lib)
     target_compile_features(cfd_euler_parity_test PRIVATE cxx_std_20)
     add_test(NAME cfd_euler_parity COMMAND cfd_euler_parity_test)
+
+    add_executable(cfd_euler_low_mach_asymptotic_test tests/cpp/test_euler_low_mach_asymptotic.cpp)
+    target_link_libraries(cfd_euler_low_mach_asymptotic_test PRIVATE cfd_core_lib)
+    target_compile_features(cfd_euler_low_mach_asymptotic_test PRIVATE cxx_std_20)
+    add_test(NAME cfd_euler_low_mach_asymptotic COMMAND cfd_euler_low_mach_asymptotic_test)
   endif()
 endif()

@@ -1,60 +1,28 @@
 # Developer Guide
 
-## Architecture
+## Scope
 
-- `src/cfd_core/include/cfd_core`: public native interfaces.
-- `src/cfd_core/mesh`: mesh generation for demo and airfoil cases.
-- `src/cfd_core/numerics`: scalar residual runtime path and backend dispatch.
-- `src/cfd_core/solvers/euler_solver.cpp`: 2D Euler solver loop, CPU/CUDA residual path selection.
-- `src/cfd_core/cuda`: CUDA kernels and backend management.
-- `src/cfd_core/io`: VTU writers for scalar and Euler fields.
-- `src/cfd_core/post`: force and Cp post-processing.
-- `src/cfd_core/bindings`: pybind11 module (`cfd_core`).
-- `python/cfd`: Python CLI, case resolution, sweep/post helpers.
+This repo is centered on:
 
-## Key Native Entry Points
+- 2D Euler airfoil solves (main path)
+- scalar demo path (smoke/parity support)
+- CPU backend with optional CUDA backend
 
-- Case dispatch:
-  - `src/cfd_core/numerics/residual_stub.cpp`
-  - `cfd::core::run_case(...)`
-- Scalar run path:
-  - `cfd::core::run_scalar_case(...)`
-- Euler run path:
-  - `src/cfd_core/solvers/euler_solver.cpp`
-  - `cfd::core::run_euler_airfoil_case(...)`
+## Code map
 
-## CUDA Integration Notes
+- `src/cfd_core/include/cfd_core/` public C++ interfaces
+- `src/cfd_core/solvers/euler/` Euler solver modules
+- `src/cfd_core/solvers/euler_solver.cpp` Euler run driver
+- `src/cfd_core/numerics/` flux/reconstruction/scalar residual path
+- `src/cfd_core/cuda/` CUDA backend and kernels
+- `src/cfd_core/post/` force and Cp post-processing
+- `python/cfd/` Python CLI and case utilities
+- `tests/cpp/` native tests
+- `tests/python/` Python smoke tests
 
-- Scalar CUDA:
-  - `src/cfd_core/cuda/kernels.cu`
-  - `src/cfd_core/cuda/cuda_backend.cu`
-- Euler CUDA (M2.5):
-  - `src/cfd_core/cuda/euler_kernels.cu`
-  - `src/cfd_core/cuda/euler_backend.cu`
-- Public CUDA API:
-  - `src/cfd_core/include/cfd_core/cuda_backend.hpp`
-- Build wiring:
-  - `src/cfd_core/cuda/CMakeLists.txt`
-  - `src/cfd_core/CMakeLists.txt`
+## Build and test loop
 
-## Python Integration Model
-
-- Python loads and validates YAML.
-- Python writes a normalized native case config into the output folder.
-- pybind executes native `run_case(...)`.
-- Native side writes VTU/CSV outputs and returns summary metrics.
-
-## Practical Developer Loop
-
-1. Configure/build native targets.
-2. Install Python package editable (`python -m pip install -e python`) when needed.
-3. Run a case through `python -m cfd.cli`.
-4. Run C++ and Python tests.
-5. Re-run format tools before commit.
-
-## Common Commands
-
-CPU build:
+CPU:
 
 ```bash
 cmake -S . -B build/cpu -DCFD_ENABLE_CUDA=OFF -DCFD_BUILD_TESTS=ON -DCFD_BUILD_PYTHON=ON
@@ -62,23 +30,40 @@ cmake --build build/cpu --config Release
 ctest --test-dir build/cpu --output-on-failure
 ```
 
-CUDA build:
+Targeted Euler checks:
 
 ```bash
-cmake -S . -B build/cuda -DCFD_ENABLE_CUDA=ON -DCFD_BUILD_TESTS=ON -DCFD_BUILD_PYTHON=ON
-cmake --build build/cuda --config Release
-ctest --test-dir build/cuda --output-on-failure
+ctest --test-dir build/cpu -R "cfd_euler_regression|cfd_euler_uniform_invariance|cfd_euler_wall_sanity|cfd_euler_low_mach_asymptotic" --output-on-failure
 ```
 
-Windows helper:
+Python:
 
-```bat
-scripts\build_cuda.cmd
+```bash
+python -m pip install -e python
+pytest -q tests/python
 ```
 
-## Current Technical TODOs
+## Runtime workflow
 
-- `TODO(cuda):` keep Euler state/residual resident on GPU across iterations.
-- `TODO(cuda):` move Euler gradient calculation to GPU.
-- `TODO(cuda):` support implicit/JFNK-style GPU reuse of residual operator.
-- `TODO(physics):` extend from Euler to viscous Navier-Stokes / RANS models.
+1. Resolve and run a case with `cfd run`.
+2. Outputs are written to your selected output directory.
+3. Post-process with `cfd post` or ParaView (`field_0000.vtu`).
+
+Example:
+
+```bash
+cfd run cases/naca0012_euler_2d.yaml --backend cpu --out results/euler_cpu_demo
+```
+
+## Important low-Mach knobs
+
+Common `numerics` keys you will tune most often:
+
+- `precond`
+- `precond_mach_ref`, `precond_mach_min`
+- `all_speed_flux_fix`
+- `all_speed_mach_cutoff`
+- `all_speed_f_min`
+- `all_speed_ramp_start_iter`, `all_speed_ramp_iters`
+- `stabilization_mach_floor_k_start`, `stabilization_mach_floor_k_target`
+- `stabilization_ramp_iters`
